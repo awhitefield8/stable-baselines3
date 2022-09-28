@@ -72,6 +72,8 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
         supported_action_spaces: Optional[Tuple[gym.spaces.Space, ...]] = None,
+        #new params
+        n_step_ad = False,
     ):
 
         super().__init__(
@@ -97,6 +99,8 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
         self.rollout_buffer = None
+        # new
+        self.n_step_ad = n_step_ad
 
         if _init_setup_model:
             self._setup_model()
@@ -210,8 +214,13 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         with th.no_grad():
             # Compute value for the last timestep
             values = self.policy.predict_values(obs_as_tensor(new_obs, self.device))
+        
+        #choose we run gae or nstep
+        if self.n_step_ad :
+            rollout_buffer.compute_returns_and_advantage_nstep(last_values=values, dones=dones)
+        else:
+            rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
 
-        rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
 
         callback.on_rollout_end()
 

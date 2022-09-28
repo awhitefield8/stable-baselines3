@@ -367,7 +367,7 @@ class RolloutBuffer(BaseBuffer):
         self.advantages = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.generator_ready = False
         super().reset()
-
+ 
     def compute_returns_and_advantage(self, last_values: th.Tensor, dones: np.ndarray) -> None:
         """
         Post-processing step: compute the lambda-return (TD(lambda) estimate)
@@ -405,6 +405,32 @@ class RolloutBuffer(BaseBuffer):
         # in David Silver Lecture 4: https://www.youtube.com/watch?v=PnHCvfgC_ZA
         self.returns = self.advantages + self.values
 
+    def compute_returns_and_advantage_nstep(self, last_values: th.Tensor, dones: np.ndarray) -> None:
+        """
+        Modified compute_returns_and_advantage by adding n-step = 4
+
+        :param last_values: state value estimation for the last step (one for each env)
+        :param dones: if the last step was a terminal step (one bool for each env).
+        """
+        # Convert to numpy
+        last_values = last_values.clone().cpu().numpy().flatten()
+        n = 10
+        last_gae_lam = 0
+        step_gamma = [self.gamma ** (i + 1) for i in range(n)]
+        for step in reversed(range(self.buffer_size)):
+            if step >= self.buffer_size - 1 - n:
+                next_non_terminal = 1.0 - dones
+                next_values = last_values
+            else:
+                next_non_terminal = 1.0 - self.episode_starts[step + 1 + n]
+                next_values = self.values[0][step + 1 + n]
+            
+            delta = np.dot(self.rewards[0][step: step + n],step_gamma) + self.gamma * next_values * next_non_terminal - self.values[step]
+            last_gae_lam = delta + self.gamma * self.gae_lambda * next_non_terminal * last_gae_lam
+            self.advantages[step] = last_gae_lam
+            
+        self.returns = self.advantages + self.values
+    
     def add(
         self,
         obs: np.ndarray,
@@ -656,7 +682,7 @@ class DictRolloutBuffer(RolloutBuffer):
     be used with the concept of rollout used in model-based RL or planning.
     Hence, it is only involved in policy and value function training but not action selection.
 
-    :param buffer_size: Max number of element in the buffer
+    :param buffer_size: Max number of elements in the buffer
     :param observation_space: Observation space
     :param action_space: Action space
     :param device: PyTorch device
