@@ -407,25 +407,27 @@ class RolloutBuffer(BaseBuffer):
 
     def compute_returns_and_advantage_nstep(self, last_values: th.Tensor, dones: np.ndarray) -> None:
         """
-        Modified compute_returns_and_advantage by adding n-step = 4
+        Modified compute_returns_and_advantage by adding n-step = 3
 
         :param last_values: state value estimation for the last step (one for each env)
         :param dones: if the last step was a terminal step (one bool for each env).
         """
         # Convert to numpy
         last_values = last_values.clone().cpu().numpy().flatten()
-        n = 10
+        n = 3
         last_gae_lam = 0
         step_gamma = [self.gamma ** (i + 1) for i in range(n)]
         for step in reversed(range(self.buffer_size)):
             if step >= self.buffer_size - 1 - n:
                 next_non_terminal = 1.0 - dones
                 next_values = last_values
+                step_gamma_use = step_gamma[0:(self.buffer_size - step)] #shorten length of discount vector
             else:
                 next_non_terminal = 1.0 - self.episode_starts[step + 1 + n]
-                next_values = self.values[0][step + 1 + n]
+                next_values = self.values[step + 1 + n]
+                step_gamma_use = step_gamma
             
-            delta = np.dot(self.rewards[0][step: step + n],step_gamma) + self.gamma * next_values * next_non_terminal - self.values[step]
+            delta = np.dot(step_gamma_use,self.rewards[step: step + n])  + (self.gamma * next_values * next_non_terminal) - self.values[step]
             last_gae_lam = delta + self.gamma * self.gae_lambda * next_non_terminal * last_gae_lam
             self.advantages[step] = last_gae_lam
             
